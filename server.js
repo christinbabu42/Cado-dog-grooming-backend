@@ -35,15 +35,13 @@ const PORT = process.env.PORT || 5000;
 app.use(
   cors({
     origin: [
-  'http://localhost:5173',
-  'https://cado-dog-grooming-frontend.vercel.app'
-],
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+      "http://localhost:5173",
+      "https://cado-dog-grooming-frontend.vercel.app",
+      "https://cado-dog-grooming-frontend-fdmia79bf-christinbabu42s-projects.vercel.app"
+    ],
     credentials: true
   })
 );
-
 
 
 // -----------------------------------------------------------------------------
