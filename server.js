@@ -7,6 +7,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
 const session = require("express-session");
+const cookieParser = require("cookie-parser");
 
 require('dotenv').config();
 
@@ -60,7 +61,9 @@ mongoose
 // -----------------------------------------------------------------------------
 // 🧰 Body Parser Middleware
 // -----------------------------------------------------------------------------
+app.set("trust proxy", 1);
 app.use(express.json());
+app.use(cookieParser());
 app.use(express.urlencoded({ extended: true, parameterLimit: 100000 }));
 
 // -----------------------------------------------------------------------------
@@ -81,7 +84,11 @@ app.use(
     secret: "supersecretkey123",
     resave: false,
     saveUninitialized: true,
-    cookie: { secure: false }
+    cookie: {
+    secure: true,
+    httpOnly: true,
+    sameSite: "none"
+  }
   })
 );
 // Google Auth Route

@@ -5,27 +5,18 @@ const User = require("../models/User");
 module.exports = async (req, res, next) => {
   try {
     // ----------------------------------
-    // 🔑 Get token from Authorization header
+    // 🔑 Get token strictly from Cookie
     // ----------------------------------
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({
-        message: "No token, authorization denied"
-      });
-    }
-
-    const token = authHeader.split(" ")[1];
+    const token = req.cookies ? req.cookies.token : null;
 
     // ----------------------------------
     // 🔐 Verify token
     // ----------------------------------
     if (!token || token === "null" || token === "undefined") {
-  return res.status(401).json({
-    message: "Invalid or missing token"
-  });
-}
-
+      return res.status(401).json({
+        message: "Invalid or missing token"
+      });
+    }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 

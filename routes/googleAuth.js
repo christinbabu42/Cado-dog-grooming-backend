@@ -130,37 +130,45 @@ router.get("/callback", async (req, res) => {
       { expiresIn: "7d" }
     );
 
+    // Set HttpOnly cookie right after generating the JWT
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "None",
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days matching token expiration
+    });
+
     console.log("✅ LOGIN mongoId:", user._id.toString());
     console.log("✅ LOGIN googleId:", user.googleId);
 
     // -------------------------------------------------------------------------
-    // 🔥 ROLE BASED REDIRECT
+    // 🔥 ROLE BASED REDIRECT (No longer passing tokens in URL strings)
     // -------------------------------------------------------------------------
     if (user.role === "admin" || user.role === "superadmin") {
-      return res.redirect(`${process.env.FRONTEND_URL}/admin?token=${token}`);
+      return res.redirect(`${process.env.FRONTEND_URL}/admin`);
     }
 
     if (user.role === "host") {
-      return res.redirect(`${process.env.FRONTEND_URL}/HostDashboard?token=${token}`);
+      return res.redirect(`${process.env.FRONTEND_URL}/HostDashboard`);
     }
 
     if (user.role === "owner") {
-      return res.redirect(`${process.env.FRONTEND_URL}/Home?token=${token}`);
+      return res.redirect(`${process.env.FRONTEND_URL}/Home`);
     }
 
     if (user.role === "gradmin") {
       return res.redirect(
-        `${process.env.FRONTEND_URL}/admin/groomer-dashboard?token=${token}`
+        `${process.env.FRONTEND_URL}/admin/groomer-dashboard`
       );
     }
 
     if (user.role === "grstaff") {
       return res.redirect(
-        `${process.env.FRONTEND_URL}/staff/earnings?token=${token}`
+        `${process.env.FRONTEND_URL}/staff/earnings`
       );
     }
 
-    return res.redirect(`${process.env.FRONTEND_URL}/Home?token=${token}`);
+    return res.redirect(`${process.env.FRONTEND_URL}/Home`);
 
   } catch (err) {
     console.error("❌ Google Auth Error:", err.message);
