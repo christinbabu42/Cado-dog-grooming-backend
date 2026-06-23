@@ -140,6 +140,8 @@ router.get("/callback", async (req, res) => {
 
     console.log("✅ LOGIN mongoId:", user._id.toString());
     console.log("✅ LOGIN googleId:", user.googleId);
+    console.log("🍪 Cookie set successfully");
+console.log("🌍 FRONTEND_URL:", process.env.FRONTEND_URL);
 
     // -------------------------------------------------------------------------
     // 🔥 ROLE BASED REDIRECT (No longer passing tokens in URL strings)
