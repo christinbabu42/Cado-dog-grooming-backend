@@ -77,18 +77,6 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(express.urlencoded({ extended: true, parameterLimit: 100000 }));
 
-// -----------------------------------------------------------------------------
-// 📁 Static Files
-// -----------------------------------------------------------------------------
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-//for-review
-app.use('/uploads', express.static('uploads'));
-
-
-// -----------------------------------------------------------------------------
-// 📌 API Routes
-// -----------------------------------------------------------------------------
 // ⭐ ADD THIS
 app.use(
   session({
@@ -102,6 +90,19 @@ app.use(
   }
   })
 );
+// -----------------------------------------------------------------------------
+// 📁 Static Files
+// -----------------------------------------------------------------------------
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+//for-review
+app.use('/uploads', express.static('uploads'));
+
+
+// -----------------------------------------------------------------------------
+// 📌 API Routes
+// -----------------------------------------------------------------------------
+
 // Google Auth Route
 app.use('/auth/google', googleAuthRouter);
 

@@ -5,13 +5,19 @@ const User = require("../models/User");
 module.exports = async (req, res, next) => {
   try {
     console.log("========== AUTH DEBUG ==========");
-console.log("Cookies:", req.cookies);
-console.log("Token:", req.cookies?.token);
-console.log("================================");
+    console.log("Cookies:", req.cookies);
+    console.log("Token:", req.cookies?.token);
+    console.log("Token from Headers:", req.headers.authorization);
+    console.log("================================");
+    
     // ----------------------------------
-    // 🔑 Get token strictly from Cookie
+    // 🔑 Get token from Cookie OR fall back to Authorization Header
     // ----------------------------------
-    const token = req.cookies ? req.cookies.token : null;
+    let token = req.cookies ? req.cookies.token : null;
+
+    if (!token && req.headers.authorization?.startsWith("Bearer ")) {
+      token = req.headers.authorization.split(" ")[1];
+    }
 
     // ----------------------------------
     // 🔐 Verify token
