@@ -134,8 +134,9 @@ router.get("/callback", async (req, res) => {
     res.cookie("token", token, {
       httpOnly: true,
       secure: true,
-      sameSite: "None",
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days matching token expiration
+      sameSite: "none",
+      path: "/",
+      maxAge: 7 * 24 * 60 * 60 * 1000
     });
 
     console.log("✅ LOGIN mongoId:", user._id.toString());
