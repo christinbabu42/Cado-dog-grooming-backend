@@ -4,12 +4,9 @@ const calculateDistanceKm = require("../utils/calculateDistance");
 const User = require("../models/User");
 const Razorpay = require("razorpay");
 const crypto = require("crypto");
-// ⭐ ADD THIS LINE
-const auth = require("../middlewares/auth"); // Adjust the path as needed
-const BookingRoom = require("../models/BookingRoom"); // ✅ Add this at the top
+const auth = require("../middlewares/auth"); 
+const BookingRoom = require("../models/BookingRoom"); 
 const GroomingStaff = require("../models/GroomingStaff");
-
-
 
 const router = express.Router();
 
@@ -18,10 +15,50 @@ const razorpay = new Razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
 
+// =========================================================
+// 🚀 NEW: CALCULATE TRAVEL DISTANCE (Protected Route)
+// =========================================================
+router.post("/calculate-travel", auth, async (req, res) => {
+  try {
+    const { staffID, servicePrice, userLat, userLng } = req.body;
 
+    if (!staffID || !userLat || !userLng) {
+      return res.status(400).json({ message: "Missing required coordinates or staff parameters" });
+    }
+
+    const staff = await GroomingStaff.findOne({ staffID });
+    if (!staff || !staff.location || !staff.location.lat) {
+      return res.status(404).json({ message: "Grooming staff or base location info not found" });
+    }
+
+    // Process earth geometry mapping distance logic
+    const distanceKm = calculateDistanceKm(
+      staff.location.lat,
+      staff.location.lng,
+      userLat,
+      userLng
+    );
+
+    // Calculate dynamic premiums based on your system business rules
+    const ratePerKm = 15; 
+    const travelCharge = Math.round(distanceKm * ratePerKm);
+    const finalAmount = Number(servicePrice) + travelCharge;
+
+    res.json({
+      success: true,
+      distanceKm: Math.round(distanceKm * 10) / 10,
+      travelCharge,
+      finalAmount
+    });
+
+  } catch (err) {
+    console.error("Travel computation handler crash:", err);
+    res.status(500).json({ message: "Internal distance matrix handler failure" });
+  }
+});
 
 // =========================================================
-// 1️⃣ CREATE ORDER FOR ONLINE PAYMENT
+// CREATE ORDER FOR ONLINE PAYMENT
 // =========================================================
 router.post("/create-order", auth, async (req, res) => {
   try {
@@ -49,10 +86,9 @@ router.post("/create-order", auth, async (req, res) => {
   }
 });
 
-
-
 // =========================================================
-
+// FETCH SPECIFIC GROOMER STAFF
+// =========================================================
 router.get("/:id", async (req, res) => {
   try {
     const staff = await GroomingStaff.findOne({ staffID: req.params.id });
@@ -67,9 +103,8 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-
 // =========================================================
-// 2️⃣ VERIFY PAYMENT + SAVE BOOKING
+// VERIFY PAYMENT + SAVE BOOKING
 // =========================================================
 router.post("/verify-payment", async (req, res) => {
   try {
@@ -90,13 +125,9 @@ router.post("/verify-payment", async (req, res) => {
       return res.json({ success: false, message: "Invalid signature" });
     }
 
-    // 🔥 NEW — COMMISSION CALCULATION (ADD THIS)
     const commissionPercent = 20;
-    const commissionAmount = Math.round(
-      (form.finalAmount * commissionPercent) / 100
-    );
+    const commissionAmount = Math.round((form.finalAmount * commissionPercent) / 100);
     const staffEarning = form.finalAmount - commissionAmount;
-    // 🔥 END NEW
 
     const booking = new GroomerBooking({
       ...form,
@@ -107,8 +138,6 @@ router.post("/verify-payment", async (req, res) => {
       paymentMethod: "Online",
       paymentStatus: "paid",
       paymentId: razorpay_payment_id,
-
-      // 🔥 NEW FIELDS SAVED
       commissionPercent,
       commissionAmount,
       staffEarning
@@ -123,10 +152,8 @@ router.post("/verify-payment", async (req, res) => {
   }
 });
 
-
-
 // =========================================================
-// 3️⃣ CASH PAYMENT (NO RAZORPAY)
+// CASH PAYMENT (NO RAZORPAY)
 // =========================================================
 router.post("/cash-payment", async (req, res) => {
   try {
@@ -137,13 +164,9 @@ router.post("/cash-payment", async (req, res) => {
       ...form
     } = req.body;
 
-    // 🔥 NEW — COMMISSION CALCULATION (ADD THIS)
     const commissionPercent = 20;
-    const commissionAmount = Math.round(
-      (finalAmount * commissionPercent) / 100
-    );
+    const commissionAmount = Math.round((finalAmount * commissionPercent) / 100);
     const staffEarning = finalAmount - commissionAmount;
-    // 🔥 END NEW
 
     const booking = new GroomerBooking({
       ...form,
@@ -156,8 +179,6 @@ router.post("/cash-payment", async (req, res) => {
       finalAmount,
       paymentMethod: "Cash",
       paymentStatus: "pending",
-
-      // 🔥 NEW FIELDS SAVED
       commissionPercent,
       commissionAmount,
       staffEarning
@@ -172,15 +193,12 @@ router.post("/cash-payment", async (req, res) => {
   }
 });
 
-
 // =========================================================
 // GET ALL GROOMER BOOKINGS (for admin)
 // =========================================================
-// GET ALL GROOMER BOOKINGS (for admin)
 router.get("/all-bookings", async (req, res) => {
   try {
-    const bookings = await GroomerBooking.find()
-      .sort({ createdAt: -1 }); // ✅ only sort by existing field
+    const bookings = await GroomerBooking.find().sort({ createdAt: -1 });
     res.json({ success: true, bookings });
   } catch (err) {
     console.error("Error fetching bookings:", err.message);
@@ -188,11 +206,9 @@ router.get("/all-bookings", async (req, res) => {
   }
 });
 
-
-// .............................
-// // GET SINGLE BOOKING DETAILS
-// .............................
-
+// =========================================================
+// GET SINGLE BOOKING DETAILS
+// =========================================================
 router.get("/details/:id", async (req, res) => {
   try {
     const booking = await GroomerBooking.findById(req.params.id);
@@ -205,37 +221,31 @@ router.get("/details/:id", async (req, res) => {
   }
 });
 
-// ..................................
-// // DELETE a groomer booking by ID
-// ..................................
-
+// =========================================================
+// DELETE A GROOMER BOOKING BY ID
+// =========================================================
 router.delete("/delete/:id", async (req, res) => {
   try {
     const { id } = req.params;
-
     const booking = await GroomerBooking.findById(id);
     if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
 
     await GroomerBooking.findByIdAndDelete(id);
     res.json({ success: true, message: "Booking deleted successfully" });
-
   } catch (err) {
     console.error("Error deleting groomer booking:", err);
     res.status(500).json({ success: false, message: "Server error" });
   }
 });
 
-// // // .....................
-// // staff earnings for staff only
-// .............................
-// GET staff earnings (with optional recent bookings)
-// GET staff earnings (WITH DATE RANGE FILTER)
+// =========================================================
+// GET STAFF EARNINGS (WITH DATE RANGE FILTER)
+// =========================================================
 router.get("/staff/earnings/:staffId", auth, async (req, res) => {
   try {
     const { staffId } = req.params;
     const { range } = req.query;
 
-    // ⏱ DATE FILTER
     let startDate = null;
     const now = new Date();
 
@@ -288,130 +298,8 @@ router.get("/staff/earnings/:staffId", auth, async (req, res) => {
 
   } catch (err) {
     console.error("Staff earnings error:", err);
-    res.status(500).json({ success: false });
+    res.status(500).json({ success: false, message: "Earnings fetch execution error" });
   }
 });
-
-
-
-
-
-// ..................................
-// // UPDATE GROOMING STATUS
-// .................................
-
-router.put("/update-status/:id", async (req, res) => {
-  try {
-    const { status } = req.body;
-
-    const booking = await GroomerBooking.findByIdAndUpdate(
-      req.params.id,
-      { groomingStatus: status },
-      { new: true }
-    );
-
-    if (!booking) {
-      return res.status(404).json({ success: false, message: "Booking not found" });
-    }
-
-    res.json({ success: true, booking });
-  } catch (err) {
-    console.error("Update status error:", err);
-    res.status(500).json({ success: false });
-  }
-});
-
-
-
-// ==========================================
-// UPDATE PAYMENT STATUS (paid / pending)
-// ==========================================
-router.put("/update-payment/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { paymentStatus } = req.body;
-
-    // ✅ Validate ID
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ success: false, message: "Invalid booking ID" });
-    }
-
-    // ✅ Validate paymentStatus
-    if (!["paid", "pending"].includes(paymentStatus)) {
-      return res.status(400).json({ success: false, message: "paymentStatus must be 'paid' or 'pending'" });
-    }
-
-    // ✅ Update booking
-    const updatedBooking = await GroomerBooking.findByIdAndUpdate(
-      id,
-      { paymentStatus },
-      { new: true } // return the updated document
-    );
-
-    if (!updatedBooking) {
-      return res.status(404).json({ success: false, message: "Booking not found" });
-    }
-
-    res.json({ success: true, booking: updatedBooking });
-  } catch (err) {
-    console.error("Error updating payment status:", err);
-    res.status(500).json({ success: false, message: "Server error" });
-  }
-});
-
-// =========================================================
-router.post("/calculate-travel", auth, async (req, res) => {
-  try {
-    const { staffID, servicePrice, userLat, userLng } = req.body;
-
-    if (!staffID) {
-      return res.status(400).json({ message: "staffID missing" });
-    }
-
-    const user = await User.findById(req.user.mongoId);
-    const staffDoc = await GroomingStaff.findOne({ staffID });
-
-    if (!staffDoc) {
-      return res.status(404).json({ message: "Groomer record not found" });
-    }
-
-    const uLat = userLat ?? user?.location?.lat;
-    const uLng = userLng ?? user?.location?.lng;
-
-    const sLat = staffDoc.location?.lat;
-    const sLng = staffDoc.location?.lng;
-
-    if (!uLat || !uLng) {
-      return res.status(400).json({ message: "User location missing" });
-    }
-
-    if (!sLat || !sLng) {
-      return res.status(400).json({ message: "Groomer location missing" });
-    }
-
-    const distanceKm = calculateDistanceKm(uLat, uLng, sLat, sLng);
-
-    // 🧮 Business rule
-    const travelCharge = distanceKm > 2 ? Math.ceil(distanceKm - 2) * 8 : 0;
-    const finalAmount = Number(servicePrice) + travelCharge;
-
-    res.json({
-      success: true,
-      distanceKm: Number(distanceKm.toFixed(2)),
-      travelCharge,
-      finalAmount
-    });
-
-  } catch (err) {
-    console.error("Travel calculation error:", err);
-    res.status(500).json({ message: "Travel calculation failed" });
-  }
-});
-
-
-
-
-
-
 
 module.exports = router;
