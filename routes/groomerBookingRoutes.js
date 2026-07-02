@@ -7,6 +7,7 @@ const crypto = require("crypto");
 const auth = require("../middlewares/auth"); 
 const BookingRoom = require("../models/BookingRoom"); 
 const GroomingStaff = require("../models/GroomingStaff");
+const rateLimit = require("express-rate-limit");
 
 const router = express.Router();
 
@@ -15,10 +16,50 @@ const razorpay = new Razorpay({
   key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
 
+// Detect environment context
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+
 // =========================================================
-// 🔒 REUSABLE BACKEND PRICING TRUTH ENGINE
+// 🛡️ SECURITY: RATE LIMITERS FOR SENSITIVE ENDPOINTS
+// =========================================================
+const orderRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, 
+  max: 25, 
+  message: { message: "Too many booking attempts from this IP, please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const paymentRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30, 
+  message: { message: "Spam protection triggered. Please slow down." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// =========================================================
+// 🔒 REUSABLE STRICTOR VALIDATION ENGINE & PRICING TRUTH
 // =========================================================
 const getVerifiedPricing = async (service, dogSize, petCount, staffID, userLat, userLng) => {
+  const allowedServices = ["Basic Bath", "Basic Grooming", "Advanced Grooming"];
+  const allowedSizes = ["Medium (<10kg)", "Large (10-25kg)", "Maximum (>25kg)"];
+
+  if (!allowedServices.includes(service) || !allowedSizes.includes(dogSize)) {
+    throw new Error("Invalid service type or pet size specified.");
+  }
+
+  const parsedPetCount = Number(petCount);
+  if (isNaN(parsedPetCount) || parsedPetCount < 1 || parsedPetCount > 5) {
+    throw new Error("Pet count must be an integer between 1 and 5.");
+  }
+
+  const latNum = Number(userLat);
+  const lngNum = Number(userLng);
+  if (isNaN(latNum) || latNum < -90 || latNum > 90 || isNaN(lngNum) || lngNum < -180 || lngNum > 180) {
+    throw new Error("Invalid GPS coordinates provided.");
+  }
+
   const prices = {
     "Basic Bath": {
       "Medium (<10kg)": 600,
@@ -37,28 +78,33 @@ const getVerifiedPricing = async (service, dogSize, petCount, staffID, userLat, 
     }
   };
 
-  // Find base pricing from secure dictionary
-  const basePriceUnit = prices[service]?.[dogSize] || 0;
-  const servicePrice = basePriceUnit * Number(petCount || 1);
+  const basePriceUnit = prices[service][dogSize];
+  const servicePrice = basePriceUnit * parsedPetCount;
 
-  // 🔍 DEBUG TRACER FOR DISPATCH ALIGNMENT
-  console.log("getVerifiedPricing -> lookup staffID =", staffID);
+  // ❌ Fix 3: Wrap debug logs based on production status flags
+  if (!IS_PRODUCTION) {
+    console.log("getVerifiedPricing -> lookup staffID =", staffID);
+  }
 
-  // Query database for authoritative staff baseline parameters
   const staff = await GroomingStaff.findOne({ staffID });
   
-  // 🔍 DEBUG TRACER FOR DATABASE RESPONSE
-  console.log("getVerifiedPricing -> found staff object =", staff);
+  if (!IS_PRODUCTION) {
+    console.log("getVerifiedPricing -> found staff object =", staff);
+  }
 
   if (!staff || !staff.location || !staff.location.lat) {
     throw new Error(`Grooming staff or base location info not found for ID: ${staffID}`);
+  }
+  
+  if (staff.active === false || staff.isDeleted === true) {
+    throw new Error("The requested grooming professional is currently unavailable.");
   }
 
   const distanceKm = calculateDistanceKm(
     staff.location.lat,
     staff.location.lng,
-    Number(userLat),
-    Number(userLng)
+    latNum,
+    lngNum
   );
 
   const ratePerKm = 15; 
@@ -84,7 +130,6 @@ router.post("/calculate-travel", auth, async (req, res) => {
       return res.status(400).json({ message: "Missing required service parameters or coordinates" });
     }
 
-    // Process earth geometry calculations securely based on parameters
     const verifiedCalculations = await getVerifiedPricing(service, dogSize, petCount, staffID, userLat, userLng);
 
     res.json({
@@ -96,16 +141,18 @@ router.post("/calculate-travel", auth, async (req, res) => {
 
   } catch (err) {
     console.error("Travel computation handler crash:", err);
-    res.status(500).json({ message: err.message || "Internal distance matrix handler failure" });
+    res.status(400).json({ message: err.message || "Internal distance matrix handler failure" });
   }
 });
 
 // =========================================================
-// CREATE ORDER FOR ONLINE PAYMENT
+// CREATE ORDER FOR ONLINE PAYMENT (Protected + Rate Limited)
 // =========================================================
-router.post("/create-order", auth, async (req, res) => {
-  // 🔍 DEBUG TRACER: See incoming structure instantly on terminal console
-  console.log("Inbound payload at /create-order:", req.body);
+router.post("/create-order", auth, orderRateLimiter, async (req, res) => {
+  // ❌ Fix 3: Environment sensitive runtime diagnostic logging
+  if (!IS_PRODUCTION) {
+    console.log("Inbound payload at /create-order:", req.body);
+  }
 
   try {
     const { service, dogSize, petCount, staffID, userLat, userLng } = req.body;
@@ -114,7 +161,6 @@ router.post("/create-order", auth, async (req, res) => {
       return res.status(400).json({ message: "Missing required order specification details" });
     }
 
-    // Enforce business pricing generation matching database truth values
     const { finalAmount } = await getVerifiedPricing(service, dogSize, petCount, staffID, userLat, userLng);
 
     const order = await razorpay.orders.create({
@@ -131,7 +177,7 @@ router.post("/create-order", auth, async (req, res) => {
 
   } catch (err) {
     console.error("Create order error:", err);
-    res.status(500).json({ message: err.message || "Order creation failed" });
+    res.status(400).json({ message: err.message || "Order creation failed" });
   }
 });
 
@@ -153,9 +199,9 @@ router.get("/:id", async (req, res) => {
 });
 
 // =========================================================
-// VERIFY PAYMENT + SAVE BOOKING
+// 🔒 HIGH-SECURITY UPDATE: VERIFY PAYMENT + SAVE BOOKING
 // =========================================================
-router.post("/verify-payment", async (req, res) => {
+router.post("/verify-payment", auth, paymentRateLimiter, async (req, res) => {
   try {
     const {
       razorpay_order_id,
@@ -164,6 +210,7 @@ router.post("/verify-payment", async (req, res) => {
       form
     } = req.body;
 
+    // 1. Check signature validity matching secret key rules first
     const sign = razorpay_order_id + "|" + razorpay_payment_id;
     const expectedSign = crypto
       .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
@@ -171,10 +218,16 @@ router.post("/verify-payment", async (req, res) => {
       .digest("hex");
 
     if (expectedSign !== razorpay_signature) {
-      return res.json({ success: false, message: "Invalid signature" });
+      return res.status(400).json({ success: false, message: "Invalid cryptographic signature detected." });
     }
 
-    // Force strict backend validation calculation engine override
+    // ❌ Fix 2: Idempotency & Replay Attack Defense (Check for duplicate payment entries)
+    const exactDuplicateBooking = await GroomerBooking.findOne({ paymentId: razorpay_payment_id });
+    if (exactDuplicateBooking) {
+      return res.status(409).json({ success: true, message: "Booking already tracked.", booking: exactDuplicateBooking });
+    }
+
+    // Force strict backend validation recalculation
     const pricingTruth = await getVerifiedPricing(
       form.service,
       form.dogSize,
@@ -184,14 +237,35 @@ router.post("/verify-payment", async (req, res) => {
       form.lng
     );
 
+    // ❌ Fix 1: Deep verification loop query against the direct Razorpay API service
+    const paymentDetails = await razorpay.payments.fetch(razorpay_payment_id);
+    
+    if (!paymentDetails || paymentDetails.status !== "captured") {
+      return res.status(402).json({ success: false, message: "Payment status must be authorized and captured." });
+    }
+
+    // Cross-verify that the API amount paid exactly equals backend calculations (in paise)
+    const expectedPaiseAmount = pricingTruth.finalAmount * 100;
+    if (Number(paymentDetails.amount) !== expectedPaiseAmount) {
+      return res.status(422).json({ success: false, message: "Payment amount discrepancy matched against system calculation values." });
+    }
+
+    const verifiedUser = await User.findById(req.user.id);
+    if (!verifiedUser) {
+      return res.status(404).json({ success: false, message: "Authorized user not found." });
+    }
+
     const commissionPercent = 20;
     const commissionAmount = Math.round((pricingTruth.finalAmount * commissionPercent) / 100);
     const staffEarning = pricingTruth.finalAmount - commissionAmount;
 
     const booking = new GroomerBooking({
       ...form,
+      userId: verifiedUser._id,     
+      name: verifiedUser.name,       
+      phone: verifiedUser.phone,     
       userLocation: { lat: form.lat, lng: form.lng },
-      staffId: form.staffID, // 🔄 FIXED: Normalized field mapping using updated uppercase ID variable
+      staffId: form.staffID, 
       staffName: form.staffName,
       staffLocation: form.staffLocation,
       distanceKm: pricingTruth.distanceKm,
@@ -210,14 +284,14 @@ router.post("/verify-payment", async (req, res) => {
 
   } catch (err) {
     console.error("Payment verify error:", err);
-    res.status(500).json({ success: false });
+    res.status(400).json({ success: false, message: err.message || "Payment verification failure" });
   }
 });
 
 // =========================================================
-// CASH PAYMENT (NO RAZORPAY)
+// 🔒 CASH PAYMENT (Protected + Rate Limited)
 // =========================================================
-router.post("/cash-payment", async (req, res) => {
+router.post("/cash-payment", auth, paymentRateLimiter, async (req, res) => {
   try {
     const {
       distanceKm,       
@@ -226,7 +300,6 @@ router.post("/cash-payment", async (req, res) => {
       ...form
     } = req.body;
 
-    // Build internal pricing matrix properties securely via truth handler
     const pricingTruth = await getVerifiedPricing(
       form.service,
       form.dogSize,
@@ -236,14 +309,34 @@ router.post("/cash-payment", async (req, res) => {
       form.lng
     );
 
+    // ❌ Fix 2: Simple deduplication for accidental fast clicks on cash submit profiles
+    const prospectiveDuplicate = await GroomerBooking.findOne({
+      userId: req.user.id,
+      service: form.service,
+      staffId: form.staffID,
+      createdAt: { $gte: new Date(Date.now() - 10000) } // Flag matching bookings submitted in the last 10 seconds
+    });
+
+    if (prospectiveDuplicate) {
+      return res.status(409).json({ success: true, message: "Processing active checkout request, avoiding entry duplicates.", booking: prospectiveDuplicate });
+    }
+
+    const verifiedUser = await User.findById(req.user.id);
+    if (!verifiedUser) {
+      return res.status(404).json({ success: false, message: "Authorized user not found." });
+    }
+
     const commissionPercent = 20;
     const commissionAmount = Math.round((pricingTruth.finalAmount * commissionPercent) / 100);
     const staffEarning = pricingTruth.finalAmount - commissionAmount;
 
     const booking = new GroomerBooking({
       ...form,
+      userId: verifiedUser._id,     
+      name: verifiedUser.name,       
+      phone: verifiedUser.phone,     
       userLocation: { lat: form.lat, lng: form.lng },
-      staffId: form.staffID, // 🔄 FIXED: Normalized field mapping using updated uppercase ID variable
+      staffId: form.staffID, 
       staffName: form.staffName,
       staffLocation: form.staffLocation,
       distanceKm: pricingTruth.distanceKm,
@@ -261,7 +354,7 @@ router.post("/cash-payment", async (req, res) => {
 
   } catch (err) {
     console.error("Cash booking error:", err);
-    res.status(500).json({ success: false });
+    res.status(400).json({ success: false, message: err.message || "Cash booking creation failure" });
   }
 });
 
