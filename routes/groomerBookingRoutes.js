@@ -16,57 +16,96 @@ const razorpay = new Razorpay({
 });
 
 // =========================================================
-// 🚀 NEW: CALCULATE TRAVEL DISTANCE (Protected Route)
+// 🔒 REUSABLE BACKEND PRICING TRUTH ENGINE
+// =========================================================
+const getVerifiedPricing = async (service, dogSize, petCount, staffID, userLat, userLng) => {
+  const prices = {
+    "Basic Bath": {
+      "Medium (<10kg)": 600,
+      "Large (10-25kg)": 800,
+      "Maximum (>25kg)": 1000
+    },
+    "Basic Grooming": {
+      "Medium (<10kg)": 1200,
+      "Large (10-25kg)": 1600,
+      "Maximum (>25kg)": 1800
+    },
+    "Advanced Grooming": {
+      "Medium (<10kg)": 1600,
+      "Large (10-25kg)": 2000,
+      "Maximum (>25kg)": 2200
+    }
+  };
+
+  // Find base pricing from secure dictionary
+  const basePriceUnit = prices[service]?.[dogSize] || 0;
+  const servicePrice = basePriceUnit * Number(petCount || 1);
+
+  // Query database for authoritative staff baseline parameters
+  const staff = await GroomingStaff.findOne({ staffID });
+  if (!staff || !staff.location || !staff.location.lat) {
+    throw new Error("Grooming staff or base location info not found");
+  }
+
+  const distanceKm = calculateDistanceKm(
+    staff.location.lat,
+    staff.location.lng,
+    Number(userLat),
+    Number(userLng)
+  );
+
+  const ratePerKm = 15; 
+  const travelCharge = Math.round(distanceKm * ratePerKm);
+  const finalAmount = servicePrice + travelCharge;
+
+  return {
+    distanceKm: Math.round(distanceKm * 10) / 10,
+    travelCharge,
+    servicePrice,
+    finalAmount
+  };
+};
+
+// =========================================================
+// 🚀 UPDATED: CALCULATE TRAVEL DISTANCE (Protected Route)
 // =========================================================
 router.post("/calculate-travel", auth, async (req, res) => {
   try {
-    const { staffID, servicePrice, userLat, userLng } = req.body;
+    const { staffID, service, dogSize, petCount, userLat, userLng } = req.body;
 
-    if (!staffID || !userLat || !userLng) {
-      return res.status(400).json({ message: "Missing required coordinates or staff parameters" });
+    if (!staffID || !service || !dogSize || !userLat || !userLng) {
+      return res.status(400).json({ message: "Missing required service parameters or coordinates" });
     }
 
-    const staff = await GroomingStaff.findOne({ staffID });
-    if (!staff || !staff.location || !staff.location.lat) {
-      return res.status(404).json({ message: "Grooming staff or base location info not found" });
-    }
-
-    // Process earth geometry mapping distance logic
-    const distanceKm = calculateDistanceKm(
-      staff.location.lat,
-      staff.location.lng,
-      userLat,
-      userLng
-    );
-
-    // Calculate dynamic premiums based on your system business rules
-    const ratePerKm = 15; 
-    const travelCharge = Math.round(distanceKm * ratePerKm);
-    const finalAmount = Number(servicePrice) + travelCharge;
+    // Process earth geometry calculations securely based on parameters
+    const verifiedCalculations = await getVerifiedPricing(service, dogSize, petCount, staffID, userLat, userLng);
 
     res.json({
       success: true,
-      distanceKm: Math.round(distanceKm * 10) / 10,
-      travelCharge,
-      finalAmount
+      distanceKm: verifiedCalculations.distanceKm,
+      travelCharge: verifiedCalculations.travelCharge,
+      finalAmount: verifiedCalculations.finalAmount
     });
 
   } catch (err) {
     console.error("Travel computation handler crash:", err);
-    res.status(500).json({ message: "Internal distance matrix handler failure" });
+    res.status(500).json({ message: err.message || "Internal distance matrix handler failure" });
   }
 });
 
 // =========================================================
-// CREATE ORDER FOR ONLINE PAYMENT
+// UPDATED: CREATE ORDER FOR ONLINE PAYMENT
 // =========================================================
 router.post("/create-order", auth, async (req, res) => {
   try {
-    const { finalAmount } = req.body;
+    const { service, dogSize, petCount, staffID, userLat, userLng } = req.body;
 
-    if (!finalAmount) {
-      return res.status(400).json({ message: "finalAmount is required" });
+    if (!staffID || !service || !dogSize || !userLat || !userLng) {
+      return res.status(400).json({ message: "Missing required order specification details" });
     }
+
+    // Enforce business pricing generation matching database truth values
+    const { finalAmount } = await getVerifiedPricing(service, dogSize, petCount, staffID, userLat, userLng);
 
     const order = await razorpay.orders.create({
       amount: finalAmount * 100,
@@ -104,7 +143,7 @@ router.get("/:id", async (req, res) => {
 });
 
 // =========================================================
-// VERIFY PAYMENT + SAVE BOOKING
+// UPDATED: VERIFY PAYMENT + SAVE BOOKING
 // =========================================================
 router.post("/verify-payment", async (req, res) => {
   try {
@@ -125,9 +164,19 @@ router.post("/verify-payment", async (req, res) => {
       return res.json({ success: false, message: "Invalid signature" });
     }
 
+    // Force strict backend validation calculation engine override
+    const pricingTruth = await getVerifiedPricing(
+      form.service,
+      form.dogSize,
+      form.petCount,
+      form.staffID,
+      form.lat,
+      form.lng
+    );
+
     const commissionPercent = 20;
-    const commissionAmount = Math.round((form.finalAmount * commissionPercent) / 100);
-    const staffEarning = form.finalAmount - commissionAmount;
+    const commissionAmount = Math.round((pricingTruth.finalAmount * commissionPercent) / 100);
+    const staffEarning = pricingTruth.finalAmount - commissionAmount;
 
     const booking = new GroomerBooking({
       ...form,
@@ -135,6 +184,9 @@ router.post("/verify-payment", async (req, res) => {
       staffId: form.staffId,
       staffName: form.staffName,
       staffLocation: form.staffLocation,
+      distanceKm: pricingTruth.distanceKm,
+      travelCharge: pricingTruth.travelCharge,
+      finalAmount: pricingTruth.finalAmount,
       paymentMethod: "Online",
       paymentStatus: "paid",
       paymentId: razorpay_payment_id,
@@ -153,20 +205,30 @@ router.post("/verify-payment", async (req, res) => {
 });
 
 // =========================================================
-// CASH PAYMENT (NO RAZORPAY)
+// UPDATED: CASH PAYMENT (NO RAZORPAY)
 // =========================================================
 router.post("/cash-payment", async (req, res) => {
   try {
     const {
-      distanceKm,
-      travelCharge,
-      finalAmount,
+      distanceKm,       // Excluded destructured items sent by clients
+      travelCharge,     // Excluded destructured items sent by clients
+      finalAmount,      // Excluded destructured items sent by clients
       ...form
     } = req.body;
 
+    // Build internal pricing matrix properties securely via truth handler
+    const pricingTruth = await getVerifiedPricing(
+      form.service,
+      form.dogSize,
+      form.petCount,
+      form.staffID,
+      form.lat,
+      form.lng
+    );
+
     const commissionPercent = 20;
-    const commissionAmount = Math.round((finalAmount * commissionPercent) / 100);
-    const staffEarning = finalAmount - commissionAmount;
+    const commissionAmount = Math.round((pricingTruth.finalAmount * commissionPercent) / 100);
+    const staffEarning = pricingTruth.finalAmount - commissionAmount;
 
     const booking = new GroomerBooking({
       ...form,
@@ -174,9 +236,9 @@ router.post("/cash-payment", async (req, res) => {
       staffId: form.staffId,
       staffName: form.staffName,
       staffLocation: form.staffLocation,
-      distanceKm,
-      travelCharge,
-      finalAmount,
+      distanceKm: pricingTruth.distanceKm,
+      travelCharge: pricingTruth.travelCharge,
+      finalAmount: pricingTruth.finalAmount,
       paymentMethod: "Cash",
       paymentStatus: "pending",
       commissionPercent,
