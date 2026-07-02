@@ -41,10 +41,17 @@ const getVerifiedPricing = async (service, dogSize, petCount, staffID, userLat, 
   const basePriceUnit = prices[service]?.[dogSize] || 0;
   const servicePrice = basePriceUnit * Number(petCount || 1);
 
+  // 🔍 DEBUG TRACER FOR DISPATCH ALIGNMENT
+  console.log("getVerifiedPricing -> lookup staffID =", staffID);
+
   // Query database for authoritative staff baseline parameters
   const staff = await GroomingStaff.findOne({ staffID });
+  
+  // 🔍 DEBUG TRACER FOR DATABASE RESPONSE
+  console.log("getVerifiedPricing -> found staff object =", staff);
+
   if (!staff || !staff.location || !staff.location.lat) {
-    throw new Error("Grooming staff or base location info not found");
+    throw new Error(`Grooming staff or base location info not found for ID: ${staffID}`);
   }
 
   const distanceKm = calculateDistanceKm(
@@ -67,7 +74,7 @@ const getVerifiedPricing = async (service, dogSize, petCount, staffID, userLat, 
 };
 
 // =========================================================
-// 🚀 UPDATED: CALCULATE TRAVEL DISTANCE (Protected Route)
+// 🚀 CALCULATE TRAVEL DISTANCE (Protected Route)
 // =========================================================
 router.post("/calculate-travel", auth, async (req, res) => {
   try {
@@ -94,9 +101,12 @@ router.post("/calculate-travel", auth, async (req, res) => {
 });
 
 // =========================================================
-// UPDATED: CREATE ORDER FOR ONLINE PAYMENT
+// CREATE ORDER FOR ONLINE PAYMENT
 // =========================================================
 router.post("/create-order", auth, async (req, res) => {
+  // 🔍 DEBUG TRACER: See incoming structure instantly on terminal console
+  console.log("Inbound payload at /create-order:", req.body);
+
   try {
     const { service, dogSize, petCount, staffID, userLat, userLng } = req.body;
 
@@ -121,7 +131,7 @@ router.post("/create-order", auth, async (req, res) => {
 
   } catch (err) {
     console.error("Create order error:", err);
-    res.status(500).json({ message: "Order creation failed" });
+    res.status(500).json({ message: err.message || "Order creation failed" });
   }
 });
 
@@ -143,7 +153,7 @@ router.get("/:id", async (req, res) => {
 });
 
 // =========================================================
-// UPDATED: VERIFY PAYMENT + SAVE BOOKING
+// VERIFY PAYMENT + SAVE BOOKING
 // =========================================================
 router.post("/verify-payment", async (req, res) => {
   try {
@@ -181,7 +191,7 @@ router.post("/verify-payment", async (req, res) => {
     const booking = new GroomerBooking({
       ...form,
       userLocation: { lat: form.lat, lng: form.lng },
-      staffId: form.staffId,
+      staffId: form.staffID, // 🔄 FIXED: Normalized field mapping using updated uppercase ID variable
       staffName: form.staffName,
       staffLocation: form.staffLocation,
       distanceKm: pricingTruth.distanceKm,
@@ -205,14 +215,14 @@ router.post("/verify-payment", async (req, res) => {
 });
 
 // =========================================================
-// UPDATED: CASH PAYMENT (NO RAZORPAY)
+// CASH PAYMENT (NO RAZORPAY)
 // =========================================================
 router.post("/cash-payment", async (req, res) => {
   try {
     const {
-      distanceKm,       // Excluded destructured items sent by clients
-      travelCharge,     // Excluded destructured items sent by clients
-      finalAmount,      // Excluded destructured items sent by clients
+      distanceKm,       
+      travelCharge,     
+      finalAmount,      
       ...form
     } = req.body;
 
@@ -233,7 +243,7 @@ router.post("/cash-payment", async (req, res) => {
     const booking = new GroomerBooking({
       ...form,
       userLocation: { lat: form.lat, lng: form.lng },
-      staffId: form.staffId,
+      staffId: form.staffID, // 🔄 FIXED: Normalized field mapping using updated uppercase ID variable
       staffName: form.staffName,
       staffLocation: form.staffLocation,
       distanceKm: pricingTruth.distanceKm,
