@@ -115,6 +115,17 @@ router.post("/", auth, async (req, res) => {
       return res.status(404).json({ success: false, message: "DogStay room profile not found." });
     }
 
+    // 🛡️ NEW VALIDATION FIX: Ensure the check-in is not before the room's availability date
+    if (room.availableFrom) {
+      const availableFrom = new Date(room.availableFrom);
+      if (checkIn < availableFrom) {
+        return res.status(400).json({
+          success: false,
+          message: `Room is available only from ${room.availableFrom}`
+        });
+      }
+    }
+
     const pricePerDay = Number(room.pricePerDay);
     // 🛡️ FIX: Safeguard calculation matrix against propagation of invalid pricing values
     if (!Number.isFinite(pricePerDay) || pricePerDay <= 0) {
