@@ -20,6 +20,7 @@ const razorpay = new Razorpay({
 // 🔐 Initialize Razorpay (Keys loaded from .env)
 // ========================================================================
 router.post("/create-order", async (req, res) => {
+  console.log("BODY =", req.body);
   try {
     const {
       listingId,
@@ -31,6 +32,17 @@ router.post("/create-order", async (req, res) => {
       mobile
     } = req.body;
 
+    // Diagnostic logging for Step 2
+    console.log("VALIDATION FIELDS CHECK:", {
+      listingId,
+      checkInDate,
+      checkOutDate,
+      numDogs,
+      fullName,
+      email,
+      mobile
+    });
+
     // 1️⃣ Validate core payload availability
     if (!listingId || !checkInDate || !checkOutDate || !fullName || !email || !mobile) {
       return res.status(400).json({
@@ -41,6 +53,8 @@ router.post("/create-order", async (req, res) => {
 
     // 2️⃣ Fetch authoritative data record to compute price server-side
     const room = await DogStay.findById(listingId);
+    console.log("ROOM =", room); // Diagnostic logging for Step 3
+
     if (!room) {
       return res.status(404).json({
         success: false,
@@ -66,6 +80,12 @@ router.post("/create-order", async (req, res) => {
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+
+    // Diagnostic logging for Step 4
+    console.log("CheckIn =", checkIn);
+    console.log("CheckOut =", checkOut);
+    console.log("Today =", today);
+
     if (checkIn < today) {
       return res.status(400).json({ success: false, message: "Check-in cannot be processed in past contexts." });
     }
@@ -79,6 +99,13 @@ router.post("/create-order", async (req, res) => {
     const userPricePerDay = Math.round(pricePerDay * 0.90);
     const totalAmount = userPricePerDay * nights;
 
+    // Diagnostic logging for Step 5
+    console.log("PRICING BREAKDOWN CALCULATED:", {
+      nights,
+      pricePerDay,
+      totalAmount
+    });
+
     const options = {
       amount: Math.round(totalAmount * 100),   // convert to paise (integer)
       currency: "INR",
@@ -90,7 +117,11 @@ router.post("/create-order", async (req, res) => {
     return res.status(200).json({ success: true, order });
 
   } catch (error) {
-    console.error("🔥 Create Order Error:", error);
+    // Diagnostic logging updates for Step 6
+    console.error("FULL ERROR");
+    console.error(error);
+    console.error(error?.error);
+    console.error(error?.response?.data);
 
     return res.status(500).json({
       success: false,
