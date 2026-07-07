@@ -76,19 +76,22 @@ router.post("/", auth, async (req, res) => {
       return res.status(400).json({ success: false, message: "Missing required booking details." });
     }
 
+    // 🛡️ FIX 4: Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       return res.status(400).json({ success: false, message: "Invalid email address format." });
     }
 
-    // 🛡️ FIX: Cast to explicit string prior to evaluation to handle numeric inputs gracefully
+    // 🛡️ FIX 5: Mobile validation (Strict format checks)
     const cleanMobile = String(mobile).replace(/[^\d]/g, "");
-    if (cleanMobile.length < 10 || cleanMobile.length > 15) {
-      return res.status(400).json({ success: false, message: "Invalid mobile number formatting context." });
+    const mobileRegex = /^[6-9]\d{9}$/;
+    if (!mobileRegex.test(cleanMobile)) {
+      return res.status(400).json({ success: false, message: "Invalid mobile number formatting context. Must be a valid 10-digit number." });
     }
 
+    // 🛡️ FIX 3: Number of dogs sanitization block
     const parsedNumDogs = Number(numDogs);
-    if (isNaN(parsedNumDogs) || parsedNumDogs < 1 || parsedNumDogs > 10) {
+    if (!Number.isInteger(parsedNumDogs) || parsedNumDogs < 1 || parsedNumDogs > 10) {
       return res.status(400).json({ success: false, message: "Dog capacity count must fall between 1 and 10." });
     }
 
@@ -99,7 +102,7 @@ router.post("/", auth, async (req, res) => {
       return res.status(400).json({ success: false, message: "Provided dates possess invalid formatting." });
     }
 
-    // 🛡️ FIX: Lock down system against processing retroactive reservation timestamps
+    // 🛡️ FIX 2: Lock down system against processing retroactive reservation timestamps
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     if (checkIn < today) {
@@ -108,6 +111,22 @@ router.post("/", auth, async (req, res) => {
 
     if (checkOut <= checkIn) {
       return res.status(400).json({ success: false, message: "Check-out date must succeed check-in date." });
+    }
+
+    // 🛡️ FIX 6: Double booking / overlapping room availability validation matrix
+    const overlappingBooking = await BookingRoom.findOne({
+      listingId: listingId,
+      bookingStatus: { $ne: "cancelled" }, // Ensure cancelled bookings are bypassed
+      $or: [
+        { checkInDate: { $lt: checkOutDate }, checkOutDate: { $gt: checkInDate } }
+      ]
+    });
+
+    if (overlappingBooking) {
+      return res.status(400).json({
+        success: false,
+        message: "The requested room dates overlap with an existing reservation."
+      });
     }
 
     const room = await DogStay.findById(listingId);
