@@ -327,6 +327,54 @@ router.post("/cash-booking", auth, async (req, res) => {
 });
 
 // ========================================================================
+// 📊 ADMINISTRATIVE ROUTE 4: FETCH ALL BOOKINGS (For PaymentsPage Dashboard)
+// ========================================================================
+router.get("/all-payments", auth, async (req, res) => {
+  try {
+    // Fetches all the records from BookingRoom collection sorted by latest first
+    const bookings = await BookingRoom.find().sort({ createdAt: -1 });
+    return res.status(200).json({
+      success: true,
+      bookings
+    });
+  } catch (error) {
+    console.error("Fetch All Payments Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch administrative payment dashboards."
+    });
+  }
+});
+
+// ========================================================================
+// 🗑️ ADMINISTRATIVE ROUTE 5: DELETE A BOOKING RECORD
+// ========================================================================
+router.delete("/delete/:id", auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const deletedRecord = await BookingRoom.findByIdAndDelete(id);
+
+    if (!deletedRecord) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking record reference targeted does not exist."
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Booking record successfully deleted"
+    });
+  } catch (error) {
+    console.error("Delete Booking Route Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to delete booking context."
+    });
+  }
+});
+
+// ========================================================================
 // 📤 Export Router
 // ========================================================================
 module.exports = router;
