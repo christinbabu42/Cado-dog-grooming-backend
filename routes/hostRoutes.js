@@ -30,41 +30,34 @@ router.get("/", async (req, res) => {
  * ✅ GET LOGGED-IN HOST PROFILE (Token Based)
  * GET /api/hosts/profile
  */
-router.get("/profile", async (req, res) => {
-  try {
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.split(" ")[1];
 
-    if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: "No token provided",
-      });
+const auth = require("../middlewares/auth");
+
+router.get("/profile", auth, async (req, res) => {
+    try {
+        const host = await User.findById(req.user.mongoId)
+            .select("-password");
+
+        if (!host) {
+            return res.status(404).json({
+                success:false,
+                message:"Host not found"
+            });
+        }
+
+        res.json({
+            success:true,
+            host
+        });
+
+    } catch(err){
+        console.error(err);
+
+        res.status(500).json({
+            success:false,
+            message:"Server error"
+        });
     }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    const host = await User.findById(decoded.mongoId).select("-password");
-
-    if (!host) {
-      return res.status(404).json({
-        success: false,
-        message: "Host not found",
-      });
-    }
-
-    res.json({
-      success: true,
-      host,
-    });
-
-  } catch (err) {
-    console.error("Host profile error:", err);
-    res.status(401).json({
-      success: false,
-      message: "Invalid or expired token",
-    });
-  }
 });
 
 module.exports = router;
