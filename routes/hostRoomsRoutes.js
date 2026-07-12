@@ -2,7 +2,7 @@ const express = require("express");
 const mongoose = require("mongoose");
 const BookingRoom = require("../models/BookingRoom");
 const DogStay = require("../models/DogStay");
-const auth = require("../middleware/auth");
+const auth = require("../middlewares/auth");
 
 const router = express.Router();
 
