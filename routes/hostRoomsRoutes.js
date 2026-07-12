@@ -2,6 +2,7 @@ const express = require("express");
 const mongoose = require("mongoose");
 const BookingRoom = require("../models/BookingRoom");
 const DogStay = require("../models/DogStay");
+const auth = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -134,6 +135,33 @@ router.get("/host/:hostId", async (req, res) => {
   }
 });
 
+router.get("/my-rooms", auth, async (req, res) => {
+    try {
+
+        const rooms = await DogStay.find({
+            hostId: req.user.mongoId
+        });
+
+        const roomsWithPhotos = rooms.map(room => ({
+            ...room.toObject(),
+            photos: room.photos.map(photo =>
+                `${req.protocol}://${req.get("host")}/${photo}`
+            )
+        }));
+
+        res.json({
+            success: true,
+            rooms: roomsWithPhotos
+        });
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({
+            success: false,
+            message: "Server error"
+        });
+    }
+});
 // ---------------------------------------------------------
 // 3️⃣ DELETE ROOM (NO CHANGE)
 // ---------------------------------------------------------
