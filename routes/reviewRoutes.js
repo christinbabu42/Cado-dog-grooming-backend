@@ -126,9 +126,7 @@ router.get('/:roomId', async (req, res) => {
         res.status(500).json({ message: 'Server error fetching reviews.' });
     }
 });
-// ---------------------------------------------
-// ✅ POST: Host Respond to Review
-// ---------------------------------------------
+
 // ---------------------------------------------
 // ✅ POST: Host Respond to Review (FIXED)
 // ---------------------------------------------
@@ -207,5 +205,30 @@ router.post('/respond/:reviewId', auth, async (req, res) => {
   }
 });
 
+// ---------------------------------------------
+// ✅ GET: Fetch Host Reviews (Based on Cookie JWT)
+// ---------------------------------------------
+router.get("/my-reviews", auth, async (req, res) => {
+  try {
+    const reviews = await Review.find({
+      hostId: req.user.mongoId,
+      approved: true
+    })
+      .populate("user", "name")
+      .populate("dogStay");
+
+    res.json({
+      success: true,
+      reviews
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      success: false,
+      message: "Server error"
+    });
+  }
+});
 
 module.exports = router;
