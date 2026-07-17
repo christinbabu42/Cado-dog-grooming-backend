@@ -89,6 +89,32 @@ router.post('/:roomId', auth, upload.single('photo'), async (req, res) => {
     }
 });
 
+// ---------------------------------------------
+// ✅ GET: Fetch Host Reviews (Based on Cookie JWT)
+// ⚠️ PLACED BEFORE /:roomId TO PREVENT CAST ERRORS
+// ---------------------------------------------
+router.get("/my-reviews", auth, async (req, res) => {
+  try {
+    const reviews = await Review.find({
+      hostId: req.user.mongoId,
+      approved: true
+    })
+      .populate("user", "name")
+      .populate("dogStay");
+
+    res.json({
+      success: true,
+      reviews
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      success: false,
+      message: "Server error"
+    });
+  }
+});
 
 // ---------------------------------------------
 // ✅ GET: Fetch Approved Reviews + User Info
@@ -198,32 +224,6 @@ router.post('/respond/:reviewId', auth, async (req, res) => {
 
   } catch (err) {
     console.error("❌ Respond error:", err);
-    res.status(500).json({
-      success: false,
-      message: "Server error"
-    });
-  }
-});
-
-// ---------------------------------------------
-// ✅ GET: Fetch Host Reviews (Based on Cookie JWT)
-// ---------------------------------------------
-router.get("/my-reviews", auth, async (req, res) => {
-  try {
-    const reviews = await Review.find({
-      hostId: req.user.mongoId,
-      approved: true
-    })
-      .populate("user", "name")
-      .populate("dogStay");
-
-    res.json({
-      success: true,
-      reviews
-    });
-
-  } catch (err) {
-    console.error(err);
     res.status(500).json({
       success: false,
       message: "Server error"
