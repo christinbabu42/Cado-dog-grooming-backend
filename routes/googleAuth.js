@@ -178,5 +178,31 @@ console.log("🌍 FRONTEND_URL:", process.env.FRONTEND_URL);
     res.status(500).send("Authentication failed");
   }
 });
+// -----------------------------------------------------------------------------
+// ⭐ LOGOUT
+// -----------------------------------------------------------------------------
+router.post("/logout", (req, res) => {
+
+  res.clearCookie("token", {
+    httpOnly: true,
+    secure: true,
+    sameSite: "none",
+    path: "/",
+  });
+
+  // Destroy Google OAuth session
+  if (req.session) {
+    req.session.destroy((err) => {
+      if (err) {
+        console.log("Session destroy error:", err);
+      }
+    });
+  }
+
+  res.json({
+    success: true,
+    message: "Logged out successfully",
+  });
+});
 
 module.exports = router;
